@@ -338,6 +338,7 @@ The format of an event batch is:
             {
                 "uid": "string",
                 "user_sub": "string",
+                "session_uid": "string",
                 "type": "string",
                 "journey_time": 0,
                 "data": {
