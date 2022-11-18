@@ -5,7 +5,7 @@ authorization handshake followed by events being streamed from the server to
 the client, with occasional time syncing.
 
 The client can post new journey events using the HTTP endpoints, e.g.,
-`POST /api/1/journeys/events/`. Once they are processed, they will be
+`POST /api/1/journeys/events/like`. Once they are processed, they will be
 broadcasted back to the client via this websocket, though the client should
 provide more immediate feedback to the user - potentially even in anticipation
 of a successful http response - and disregard the duplicate when it comes through
@@ -485,9 +485,9 @@ lagged than it actually is.
 
 ## Client Adaptive Bandwidth
 
-This section describes how the client should select `bandwidth_events` and
-`bandwidth_window` based on the available processing power and network
-conditions.
+This section describes how the client should select `bandwidth_events` based on
+the available processing power and network conditions. This is the only variable
+that should be adapted by the client.
 
 Arbitrary clients cannot be guarranteed to follow this algorithm, however not
 doing so will only degrade performance. TCP congestion control, which
@@ -497,25 +497,14 @@ this attack despite it being possible to
 [mitigate](https://cseweb.ucsd.edu/~savage/papers/CCR99.pdf), which suggests
 this type of attack is not popular - probably because it degrades into a
 non-multiplicative, protocol-specific, denial of service attack - which is not
-generally viable. This attack is mitigated somewhat by the limits placed on
-`bandwidth_events` and `bandwidth_window` nonetheless.
+generally viable. Nonetheless, this attack is mitigated somewhat by the limits
+placed on `bandwidth_events`.
 
 Websockets are transmitted over TCP, so they will arrive in order. Packet loss
 will thus appear as latency. While not receiving packets the client cannot
 distinguish between latency and a simple lack of events over the window. Thus
 the latency detection packets are required to detect packet loss or other forms
 of network congestion.
-
-In general, the available processing power will restrict `bandwidth_events`,
-since the client must process each event. The network conditions will restrict
-both `bandwidth_events` and `bandwidth_window`, where the former is due to
-throughput and the latter is due to spikiness.
-
-This algorithm will exclusively increase the `bandwidth_window` up to 8 seconds,
-with the following progression: `1, 2, 4, 8`. In general a higher bandwidth
-window trades server-side memory for more stable throughput, which can be
-helpful under network congestion, but can be harmful under cpu congestion due to
-the spikier events.
 
 The bandwidth events will use the additive-increase/multiplicative-decrease
 ([AIMD](https://en.wikipedia.org/wiki/Additive_increase/multiplicative_decrease))
@@ -525,9 +514,9 @@ The minimum can be reached in 4 seconds, the maximum can be reached in 10
 seconds. Thus it's reasonable to say this algorithm has a 10 second warmup
 period.
 
-The AIMD algorithm is applied to the bandwidth events independently for network
-conditions and processing conditions, and the applied value is always the lower
-of the two.
+The AIMD algorithm is applied to the bandwidth events pseudo-independently for
+network conditions and processing conditions, and the applied value is always
+the lower of the two.
 
 The client will have the following state for adaptive bandwidth, shown with
 their initial values
@@ -535,8 +524,6 @@ their initial values
 ```json
 {
     "bandwidth_events": 100,
-    "bandwidth_window": 1.0,
-    "target_bandwidth_window": 1.0,
     "target_bandwidth_events": {
         "cpu": 100,
         "network": 100
@@ -544,10 +531,9 @@ their initial values
 }
 ```
 
-The client should do a time sync event to have the bandwidth window set to the
-target bandwidth window, and the bandwidth events set to the target bandwidth
-events (the lesser of the cpu and network), but not more often than once per
-second.
+The client should do a time sync event to have the bandwidth events set to the
+target bandwidth events (the lesser of the cpu and network), but not more often
+than once per second.
 
 As it receives events in batches, it should be pushed onto a min-heap based on
 the journey time of the events.
@@ -562,13 +548,10 @@ less than 10. If it does not do this for a period of at least 1 second, the
 target bandwidth events for `cpu` should be set to the current bandwidth events
 plus 500, but not more than 5,000.
 
-When the client receives a latency detection packet, if it is more than 0.5 seconds
-before the target time, it should:
+When the client receives a latency detection packet, if it is more than 0.5
+seconds before the target time, it should set the target bandwidth events for
+`network` to half the current bandwidth events, but not less than 10
 
--   Set the target bandwidth window to twice the current bandwidth window, but not more than 8
--   Set the target bandwidth events for `network` to half the current bandwidth events,
-    but not less than 10
-
-If it is at least half the current bandwidth window after the current time, it should
-set the target bandwidth events for `network` to the current bandwidth events plus 500,
-but not more than 5,000.
+If it is at least 0.5s after the current journey time, it should set the target
+bandwidth events for `network` to the current bandwidth events plus 500, but not
+more than 5,000.
