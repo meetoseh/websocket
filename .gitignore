@@ -1,6 +1,7 @@
 venv
 __pycache__
 dev.bat
+/tmp
 
 # md -> html exports
 docs/**/*.html

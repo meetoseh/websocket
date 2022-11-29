@@ -5,9 +5,23 @@ from typing import Callable, Coroutine, List, Optional
 import rqdb
 import rqdb.async_connection
 import redis.asyncio
+import diskcache
 import os
 import slack
 import jobs
+import file_service
+import loguru
+
+
+our_diskcache: diskcache.Cache = diskcache.Cache(
+    "tmp/diskcache", eviction_policy="least-recently-stored"
+)
+"""diskcache does a particularly good job ensuring it's safe to reuse a single Cache object
+without having to worry, and doing so offers significant performance gains. In particular,
+it's fine if:
+- this is built before we are forked
+- this is used in different threads
+"""
 
 
 class Itgs:
@@ -33,6 +47,9 @@ class Itgs:
 
         self._jobs: Optional[jobs.Jobs] = None
         """the jobs connection if it had been opened"""
+
+        self._file_service: Optional[file_service.FileService] = None
+        """the file service connection if it had been opened"""
 
         self._closures: List[Callable[["Itgs"], Coroutine]] = []
         """functions to run on __aexit__ to cleanup opened resources"""
@@ -64,7 +81,21 @@ class Itgs:
                 me._conn = None
 
         self._closures.append(cleanup)
-        self._conn = rqdb.connect_async(hosts=rqlite_ips)
+        self._conn = rqdb.connect_async(
+            hosts=rqlite_ips,
+            log=rqdb.LogConfig(
+                read_start={"method": loguru.logger.debug},
+                read_response={"method": loguru.logger.debug},
+                read_stale={"method": loguru.logger.debug},
+                write_start={"method": loguru.logger.debug},
+                write_response={"method": loguru.logger.debug},
+                connect_timeout={"method": loguru.logger.warning},
+                hosts_exhausted={"method": loguru.logger.critical},
+                non_ok_response={"method": loguru.logger.warning},
+                backup_start={"method": loguru.logger.info},
+                backup_end={"method": loguru.logger.info},
+            ),
+        )
         await self._conn.__aenter__()
         return self._conn
 
@@ -121,3 +152,31 @@ class Itgs:
 
         self._closures.append(cleanup)
         return self._jobs
+
+    async def files(self) -> file_service.FileService:
+        """gets or creates the file service for large binary blobs"""
+        if self._file_service is not None:
+            return self._file_service
+
+        default_bucket = os.environ["OSEH_S3_BUCKET_NAME"]
+
+        if os.environ.get("ENVIRONMENT", default="production") == "dev":
+            root = os.environ["OSEH_S3_LOCAL_BUCKET_PATH"]
+            self._file_service = file_service.LocalFiles(
+                root, default_bucket=default_bucket
+            )
+        else:
+            self._file_service = file_service.S3(default_bucket=default_bucket)
+
+        await self._file_service.__aenter__()
+
+        async def cleanup(me: "Itgs") -> None:
+            await me._file_service.__aexit__(None, None, None)
+            me._file_service = None
+
+        self._closures.append(cleanup)
+        return self._file_service
+
+    async def local_cache(self) -> diskcache.Cache:
+        """gets or creates the local cache for storing files transiently on this instance"""
+        return our_diskcache
