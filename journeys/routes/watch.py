@@ -47,7 +47,7 @@ RECEIVE_TIMEOUT: float = 5.0
 long we wait before we assume they have disconnected.
 """
 
-SEND_TIMEOUT: float = 5.0
+SEND_TIMEOUT: float = 1.0
 """When we are trying to send a packet to the client, how long before we wait
 to queue the packet to be sent. This is not the time required for the client to
 receive the packet unless the tcp buffer is full.
@@ -58,7 +58,7 @@ CLOSE_TIMEOUT: float = 5.0
 we give up
 """
 
-LATENCY_DETECTION_INTERVAL: float = 10.0
+LATENCY_DETECTION_INTERVAL: float = 2.0
 """Seconds between latency detection packets"""
 
 EVENT_BATCH_INTERVAL: float = 0.25
@@ -104,7 +104,7 @@ async def watch_journey(websocket: WebSocket):
         if not data:
             return
 
-        await handle_stream(websocket, itgs=itgs, logger=logger)
+        await handle_stream(websocket, itgs=itgs, logger=logger, data=data)
 
 
 async def handle_initial_handshake(
@@ -312,7 +312,8 @@ async def handle_initial_handshake(
                     uid=uid,
                     data=AuthResponseSuccessPacketData(),
                 ).json()
-            )
+            ),
+            timeout=SEND_TIMEOUT,
         )
     except asyncio.TimeoutError:
         logger.debug("sending AuthResponseSuccess timed out")
@@ -424,7 +425,7 @@ async def handle_stream(
                 raw_message = event_future.result()
                 if raw_message is not None:
                     message = JourneyEventPubSubMessage.parse_raw(
-                        raw_message, content_type="application/json"
+                        raw_message["data"], content_type="application/json"
                     )
 
                     cur_journey_time = data.core.journey_time
@@ -434,26 +435,25 @@ async def handle_stream(
                         <= cur_journey_time + data.core.lookahead
                     ):
                         now = time.perf_counter()
-                        delta_time = (now - last_token_at) * data.core.rate
-                        bonus_tokens = int(delta_time / data.core.bandwidth)
+                        delta_sim_time = (now - last_token_at) * data.core.rate
+                        bonus_tokens = int(data.core.bandwidth * delta_sim_time)
                         tokens = min(data.core.bandwidth, tokens + bonus_tokens)
-                        last_token_at += (
-                            bonus_tokens * data.core.bandwidth
-                        ) / data.core.rate
-                        assert (
-                            now - 1 / data.core.bandwidth - 1e-6
-                            <= last_token_at
-                            <= now + 1e-6
-                        )
+                        used_sim_time = bonus_tokens / data.core.bandwidth
+                        used_real_time = used_sim_time / data.core.rate
+                        last_token_at += used_real_time
 
                         if tokens > 0:
                             tokens -= 1
+                            logger.debug(
+                                "received event we intend to send, uid={uid}",
+                                uid=message.uid,
+                            )
                             unsent_events.append(
                                 EventBatchPacketDataItem(
                                     uid=message.uid,
                                     user_sub=message.user_sub,
                                     session_uid=message.session_uid,
-                                    type=message.evtype,
+                                    evtype=message.evtype,
                                     journey_time=message.journey_time,
                                     data=message.data,
                                 )
@@ -463,20 +463,24 @@ async def handle_stream(
                                 next_event_batch_at = (
                                     time.perf_counter() + EVENT_BATCH_INTERVAL
                                 )
+                                logger.debug(
+                                    "first event in batch, scheduling batch send for {next_event_batch_at}",
+                                    next_event_batch_at=next_event_batch_at,
+                                )
 
                 event_future = asyncio.create_task(
                     pubsub.get_message(ignore_subscribe_messages=True, timeout=5)
                 )
 
-            if (
-                next_event_batch_at is not None
-                and time.perf_counter() > next_event_batch_at
-            ):
+            now = time.perf_counter()
+            if next_event_batch_at is not None and now >= next_event_batch_at:
                 uid = gen_uid()
                 logger.debug(
-                    "uid={uid}: sending {n} events to client",
+                    "uid={uid}: sending {n} events to client at now={now}; undesired_delay={undesired_delay}",
                     uid=repr(uid),
                     n=len(unsent_events),
+                    now=now,
+                    undesired_delay=now - next_event_batch_at,
                 )
                 try:
                     await asyncio.wait_for(
@@ -515,25 +519,47 @@ async def handle_stream(
                 await close(websocket, logger=logger)
                 return
 
-            sleep_future: Optional[asyncio.Task] = None
+            want_send_next_latency_future: Optional[asyncio.Task] = None
             if latency_future is None:
                 now = time.perf_counter()
                 if now >= data.latency_detection.next_at:
                     continue
 
-                sleep_future = asyncio.create_task(
+                want_send_next_latency_future = asyncio.create_task(
                     asyncio.sleep(data.latency_detection.next_at - now)
                 )
+
+            want_send_event_batch_future: Optional[asyncio.Task] = None
+            if next_event_batch_at is not None:
+                now = time.perf_counter()
+                if now >= next_event_batch_at:
+                    continue
+
+                want_send_event_batch_future = asyncio.create_task(
+                    asyncio.sleep(next_event_batch_at - now)
+                )
+
             await asyncio.wait(
                 [
                     recieve_future,
                     event_future,
-                    *([sleep_future] if latency_future is None else [latency_future]),
+                    *(
+                        [want_send_next_latency_future]
+                        if latency_future is None
+                        else [latency_future]
+                    ),
+                    *(
+                        [want_send_event_batch_future]
+                        if next_event_batch_at is not None
+                        else []
+                    ),
                 ],
                 return_when=asyncio.FIRST_COMPLETED,
             )
-            if sleep_future is not None:
-                sleep_future.cancel()
+            if want_send_next_latency_future is not None:
+                want_send_next_latency_future.cancel()
+            if want_send_event_batch_future is not None:
+                want_send_event_batch_future.cancel()
     finally:
         await pubsub.unsubscribe(f"ps:journeys:{data.core.journey_uid}:events")
 
@@ -551,7 +577,7 @@ async def send_latency_detection_packet(
     # sending the packet as possible, so we skip the jsonification step
     # and instead use basic string concatenation
     prefix = f'{{"success":true,"type":"latency_detection","uid":"{uid}","data":{{"expected_receive_journey_time":'
-    suffix = "}}}}"
+    suffix = "}}"
 
     logger.debug("uid={uid} sending LatencyDetectionPacket", uid=repr(uid))
     await asyncio.wait_for(

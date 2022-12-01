@@ -12,7 +12,7 @@ They have the following form:
     "uid": "string",
     "user_sub": "string",
     "session_uid": "string",
-    "type": "string",
+    "evtype": "string",
     "journey_time": 0,
     "data": {
         "key": "value"

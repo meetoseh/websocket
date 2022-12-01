@@ -197,7 +197,7 @@ class EventBatchPacketDataItem(BaseModel):
             "for synthetic events (i.e., events released simply to sync the client)"
         )
     )
-    type: EventBatchPacketDataItemTypeT = Field(description="the type of event")
+    evtype: EventBatchPacketDataItemTypeT = Field(description="the type of event")
     journey_time: float = Field(
         description=(
             "the journey clock time of when the event occurred, in fractional seconds. "

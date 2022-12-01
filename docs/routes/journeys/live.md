@@ -1,4 +1,4 @@
-# /api/2/journeys/{uid}/live
+# /api/2/journeys/live
 
 This endpoint streams live events for a journey to the client. It allows
 for a configurable bandwidth limit which is respected using a token bucket
