@@ -1,9 +1,11 @@
 """This module assists with loading and caching the meta data for a journey."""
 
 
-from typing import Optional
+import time
+from typing import NoReturn, Optional
 from itgs import Itgs
 from pydantic import BaseModel, Field
+import perpetual_pub_sub as pps
 
 
 class JourneyMeta(BaseModel):
@@ -77,3 +79,55 @@ async def get_journey_meta(itgs: Itgs, journey_uid: str) -> Optional[JourneyMeta
     if meta is not None:
         await set_cached_journey_meta(itgs, journey_uid, meta)
     return meta
+
+
+class JourneyMetaPurgePubSubMessage(BaseModel):
+    journey_uid: str = Field(
+        description="The UID of the journey to purge the meta information for"
+    )
+    min_checked_at: float = Field(
+        description=(
+            "When this purge was triggered; it's not necessary to purge information "
+            "that was cached after this time"
+        )
+    )
+
+
+async def purge_journey_meta(itgs: Itgs, journey_uid: str) -> None:
+    """Purges any cached journey meta information on the journey with the given uid from
+    all instances, forcing it to be reloaded from the database. This should be called
+    if the journey meta information has been updated in the database
+
+    Args:
+        itgs (Itgs): The integrations to (re)use
+        journey_uid (str): The journey uid to purge
+    """
+    redis = await itgs.redis()
+    await redis.publish(
+        "ps:journeys:meta:purge".encode("ascii"),
+        JourneyMetaPurgePubSubMessage(
+            journey_uid=journey_uid,
+            min_checked_at=time.time(),
+        )
+        .json()
+        .encode("utf-8"),
+    )
+
+
+async def purge_journey_meta_loop() -> NoReturn:
+    """This loop will listen for purge requests from ps:journeys:meta:purge and
+    will purge the journey meta information from our local cache, ensuring it
+    gets reloaded from the nearest non-local cache or source. It runs continuously
+    in the background and is invoked by the admin journey update endpoint(s) as if via
+    the purge_journey_meta function
+    """
+    async with pps.PPSSubscription(
+        pps.instance, "ps:journeys:meta:purge", hint="journey_meta"
+    ) as sub:
+        async for raw_data in sub:
+            message = JourneyMetaPurgePubSubMessage.parse_raw(
+                raw_data, content_type="application/json"
+            )
+            async with Itgs() as itgs:
+                local_cache = await itgs.local_cache()
+                local_cache.delete(f"journeys:{message.journey_uid}:meta")

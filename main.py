@@ -3,6 +3,7 @@ from starlette.middleware.cors import CORSMiddleware
 from error_middleware import handle_request_error
 import perpetual_pub_sub as pps
 import journeys.router
+import journeys.lib.meta
 import updater
 import asyncio
 import os
@@ -11,6 +12,7 @@ if pps.instance is None:
     pps.instance = pps.PerpetualPubSub()
 
 asyncio.ensure_future(updater.listen_forever())
+asyncio.ensure_future(journeys.lib.meta.purge_journey_meta_loop())
 app = FastAPI(
     title="oseh websockets",
     description="hypersocial mindfulness app",
