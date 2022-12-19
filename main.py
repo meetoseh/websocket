@@ -1,12 +1,16 @@
 from fastapi import FastAPI, WebSocket
 from starlette.middleware.cors import CORSMiddleware
 from error_middleware import handle_request_error
+import perpetual_pub_sub as pps
 import journeys.router
-import multiprocessing
 import updater
+import asyncio
 import os
 
-multiprocessing.Process(target=updater.listen_forever_sync, daemon=True).start()
+if pps.instance is None:
+    pps.instance = pps.PerpetualPubSub()
+
+asyncio.ensure_future(updater.listen_forever())
 app = FastAPI(
     title="oseh websockets",
     description="hypersocial mindfulness app",
