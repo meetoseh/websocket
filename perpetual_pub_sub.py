@@ -630,7 +630,9 @@ def _poll_pipe(
                 break
 
             loop.call_soon_threadsafe(background_thread_poll_event.set)
-            background_thread_resume_event.wait()
+            while not background_thread_resume_event.wait(1):
+                if background_thread_shutdown_event.is_set():
+                    return
             background_thread_resume_event.clear()
 
 
