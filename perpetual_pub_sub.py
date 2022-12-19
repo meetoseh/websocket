@@ -78,9 +78,7 @@ class PerpetualPubSub:
         pub sub process.
         """
 
-        mp.Process(
-           target=self._run_in_background, daemon=True
-        ).start()
+        mp.Process(target=self._run_in_background, daemon=True).start()
 
     def _run_in_background(self) -> Never:
         """This is the function which is run in the background process. It will create
@@ -342,7 +340,7 @@ class PerpetualPubSub:
                                     )
                                     await pubsub.unsubscribe(channel)
                 except Exception as e:
-                    asyncio.ensure_future(handle_error(e))
+                    await handle_error(e)
 
                     now = time.time()
                     failures_times = [t for t in failures_times if t > now - 60]
@@ -362,8 +360,10 @@ class PerpetualPubSub:
                 for uid, send_pipe in subscriptions.items():
                     try:
                         send_pipe.send_bytes(b"closed")
+                        logger.debug(f"sent closed to {uid}")
                     except BrokenPipeError:
-                        pass
+                        logger.debug(f"could not send closed to {uid}")
+            raise
         finally:
             logger.info("PerpetualPubSub shutting down")
 
@@ -516,8 +516,11 @@ class PPSSubscription:
                     # background thread has exited before we sent the signal,
                     # meaning that the receive pipe broke, meaning that the
                     # perpetual pub sub process has exited.
+                    poll.cancel()
                     self._unsafe_close()
                     return
+
+                bknd_shutdown.cancel()
 
                 msg = self.receive_pipe.recv_bytes()
                 if msg == b"closed":
