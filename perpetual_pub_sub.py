@@ -24,14 +24,15 @@ from error_middleware import handle_error
 from itgs import Itgs
 import multiprocessing as mp
 import multiprocessing.connection
+import multiprocessing.synchronize
 import threading
 import traceback
+import loguru
 import queue
 import asyncio
 import secrets
 import sys
 import os
-import loguru
 
 
 class PPSShutdownException(Exception):
@@ -51,6 +52,12 @@ class PerpetualPubSub:
     """
 
     def __init__(self):
+        self.exit_event = mp.Event()
+        """An event which can be shut to shutdown the background process cleanly."""
+
+        self.exitted_event = mp.Event()
+        """An event which will be set when the background process has exited."""
+
         self.subscribe_queue = mp.Queue()
         """A queue where the elements in the queue are tuples of the form
         (uid: str, channel: str or bytes, send_pipe: multiprocessing.connection.Connection).
@@ -119,6 +126,28 @@ class PerpetualPubSub:
         #
         # This variable can be interpreted as "subcriptions which we recently removed because
         # we detected the pipe was broken"
+
+        exit_event_async = asyncio.Event()
+        exit_event_thread = threading.Thread(target=mp_event_to_asyncio_event, args=(asyncio.get_running_loop(), self.exit_event, exit_event_async))
+        exit_event_thread.start()
+
+        def shutdown_cleanly():
+            logger.info("PerpetualPubSub beginning clean shutdown")
+            for channel, subscriptions in subscriptions_by_channel.items():
+                for uid, send_pipe in subscriptions.items():
+                    try:
+                        send_pipe.send_bytes(b"closed")
+                        logger.debug(f"sent closed to {uid} on {channel}")
+                    except BrokenPipeError:
+                        logger.debug(f"could not send closed to {uid} (broken pipe)")
+                    except OSError:
+                        logger.debug(
+                            f"could not send closed to {uid} (generic os error)"
+                        )
+
+            self.exit_event.set()
+            exit_event_thread.join()
+
         try:
             while True:
                 try:
@@ -143,7 +172,10 @@ class PerpetualPubSub:
                             if subscriptions_by_channel
                             else None
                         )
-                        while True:
+
+                        exit_event_wait_task = asyncio.create_task(exit_event_async.wait())
+
+                        while not exit_event_wait_task.done():
                             while True:
                                 try:
                                     (
@@ -297,6 +329,10 @@ class PerpetualPubSub:
                                     continue
                                 message_task = asyncio.create_task(pubsub.get_message())
 
+                            await asyncio.wait([message_task, exit_event_wait_task], return_when=asyncio.FIRST_COMPLETED)
+                            if exit_event_wait_task.done():
+                                message_task.cancel()
+                                break
                             message = await message_task
                             message_task = None
                             if message is None:
@@ -339,6 +375,11 @@ class PerpetualPubSub:
                                         channel=channel,
                                     )
                                     await pubsub.unsubscribe(channel)
+
+                        exit_event_wait_task.result()
+                        if message_task is not None:
+                            message_task.cancel()
+                        shutdown_cleanly()
                 except Exception as e:
                     await handle_error(e)
 
@@ -356,17 +397,21 @@ class PerpetualPubSub:
                     await asyncio.sleep(len(failures_times))
         except BaseException:
             # we've been interrupted, notify all the subscribers that we're shutting down
-            for channel, subscriptions in subscriptions_by_channel.items():
-                for uid, send_pipe in subscriptions.items():
-                    try:
-                        send_pipe.send_bytes(b"closed")
-                        logger.debug(f"sent closed to {uid}")
-                    except BrokenPipeError:
-                        logger.debug(f"could not send closed to {uid}")
+            shutdown_cleanly()
             raise
         finally:
+            self.exitted_event.set()
             logger.info("PerpetualPubSub shutting down")
 
+
+def mp_event_to_asyncio_event(
+    loop: asyncio.AbstractEventLoop, 
+    mp_event: multiprocessing.synchronize.Event, 
+    aio_event: asyncio.Event
+) -> Never:
+    """A thread target for setting an asyncio event when a multiprocessing event is set."""
+    mp_event.wait()
+    loop.call_soon_threadsafe(aio_event.set)
 
 class PPSSubscription:
     """A convenient interface to a subscription to a perpetual pub sub connection. This
