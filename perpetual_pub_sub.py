@@ -27,12 +27,12 @@ import multiprocessing.connection
 import multiprocessing.synchronize
 import threading
 import traceback
-import loguru
 import queue
 import asyncio
 import secrets
 import sys
 import os
+import loguru
 
 
 class PPSShutdownException(Exception):
@@ -128,7 +128,10 @@ class PerpetualPubSub:
         # we detected the pipe was broken"
 
         exit_event_async = asyncio.Event()
-        exit_event_thread = threading.Thread(target=mp_event_to_asyncio_event, args=(asyncio.get_running_loop(), self.exit_event, exit_event_async))
+        exit_event_thread = threading.Thread(
+            target=mp_event_to_asyncio_event,
+            args=(asyncio.get_running_loop(), self.exit_event, exit_event_async),
+        )
         exit_event_thread.start()
 
         def shutdown_cleanly():
@@ -173,7 +176,9 @@ class PerpetualPubSub:
                             else None
                         )
 
-                        exit_event_wait_task = asyncio.create_task(exit_event_async.wait())
+                        exit_event_wait_task = asyncio.create_task(
+                            exit_event_async.wait()
+                        )
 
                         while not exit_event_wait_task.done():
                             while True:
@@ -327,9 +332,14 @@ class PerpetualPubSub:
                                 if not subscriptions_by_channel:
                                     await asyncio.sleep(1)
                                     continue
-                                message_task = asyncio.create_task(pubsub.get_message())
+                                message_task = asyncio.create_task(
+                                    pubsub.get_message(timeout=1)
+                                )
 
-                            await asyncio.wait([message_task, exit_event_wait_task], return_when=asyncio.FIRST_COMPLETED)
+                            await asyncio.wait(
+                                [message_task, exit_event_wait_task],
+                                return_when=asyncio.FIRST_COMPLETED,
+                            )
                             if exit_event_wait_task.done():
                                 message_task.cancel()
                                 break
@@ -405,13 +415,14 @@ class PerpetualPubSub:
 
 
 def mp_event_to_asyncio_event(
-    loop: asyncio.AbstractEventLoop, 
-    mp_event: multiprocessing.synchronize.Event, 
-    aio_event: asyncio.Event
+    loop: asyncio.AbstractEventLoop,
+    mp_event: multiprocessing.synchronize.Event,
+    aio_event: asyncio.Event,
 ) -> Never:
     """A thread target for setting an asyncio event when a multiprocessing event is set."""
     mp_event.wait()
     loop.call_soon_threadsafe(aio_event.set)
+
 
 class PPSSubscription:
     """A convenient interface to a subscription to a perpetual pub sub connection. This
