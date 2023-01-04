@@ -164,7 +164,9 @@ class PerpetualPubSub:
                                 "Resubscribing to {channels}",
                                 channels=", ".join(subscriptions_by_channel),
                             )
-                            await pubsub.subscribe(*subscriptions_by_channel)
+                            await pubsub.subscribe(
+                                *[c.encode("utf-8") for c in subscriptions_by_channel]
+                            )
 
                         message_task = (
                             asyncio.create_task(
@@ -240,7 +242,7 @@ class PerpetualPubSub:
                                         "PerpetualPubSub subscribing to {channel}",
                                         channel=channel,
                                     )
-                                    await pubsub.subscribe(channel)
+                                    await pubsub.subscribe(channel.encode("utf-8"))
 
                             while True:
                                 try:
@@ -295,7 +297,7 @@ class PerpetualPubSub:
                                         "PerpetualPubSub unsubscribing from {channel}",
                                         channel=channel,
                                     )
-                                    await pubsub.unsubscribe(channel)
+                                    await pubsub.unsubscribe(channel.encode("utf-8"))
 
                                 try:
                                     old_send_pipe.send_bytes(b"closed")
@@ -384,7 +386,7 @@ class PerpetualPubSub:
                                         "PerpetualPubSub unsubscribing from {channel}",
                                         channel=channel,
                                     )
-                                    await pubsub.unsubscribe(channel)
+                                    await pubsub.unsubscribe(channel.encode("utf-8"))
 
                         exit_event_wait_task.result()
                         if message_task is not None:
