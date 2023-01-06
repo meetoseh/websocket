@@ -115,9 +115,12 @@ class SyncResponsePacketData(BaseModel):
 
     @validator("transmit_timestamp")
     def transmit_timestamp_must_be_at_least_receive_timestamp(
-        cls, transmit_timestamp: float, values: dict
+        cls, transmit_timestamp: float, values: dict, **kwargs
     ) -> float:
-        if transmit_timestamp < values["receive_timestamp"]:
+        if (
+            "receive_timestamp" in values
+            and transmit_timestamp < values["receive_timestamp"]
+        ):
             raise ValueError("transmit_timestamp must be at least receive_timestamp")
         return transmit_timestamp
 
@@ -127,11 +130,11 @@ class AuthResponseSuccessPacketData(BaseModel):
 
 
 class EventBatchPacketDataItemJoinData(BaseModel):
-    ...
+    name: str = Field(description="The name of the user")
 
 
 class EventBatchPacketDataItemLeaveData(BaseModel):
-    ...
+    name: str = Field(description="The name of the user")
 
 
 class EventBatchPacketDataItemLikeData(BaseModel):
@@ -169,16 +172,21 @@ EventBatchPacketDataItemTypeT = Literal[
     "word_prompt_response",
 ]
 
-EventBatchPacketDataItemDataT = Union[
+EventBatchPacketDataItemDataT = Union[  # sensitive to order as it takes the first match
     EventBatchPacketDataItemJoinData,
     EventBatchPacketDataItemLeaveData,
-    EventBatchPacketDataItemLikeData,
     EventBatchPacketDataItemNumericPromptResponseData,
-    EventBatchPacketDataItemPressPromptStartResponseData,
-    EventBatchPacketDataItemPressPromptEndResponseData,
     EventBatchPacketDataItemColorPromptResponseData,
     EventBatchPacketDataItemWordPromptResponseData,
+    EventBatchPacketDataItemLikeData,
+    EventBatchPacketDataItemPressPromptStartResponseData,
+    EventBatchPacketDataItemPressPromptEndResponseData,
 ]
+
+
+class ImageRef(BaseModel):
+    uid: str = Field(description="The uid of the image file")
+    jwt: str = Field(description="A jwt that can be used to access the image")
 
 
 class EventBatchPacketDataItem(BaseModel):
@@ -206,6 +214,12 @@ class EventBatchPacketDataItem(BaseModel):
             "it as soon as possible, otherwise, it should be presented at the appropriate "
             "journey time."
         ),
+    )
+    icon: Optional[ImageRef] = Field(
+        description=(
+            "If an icon is associated with this event, such as the user's profile picture, "
+            "then a reference to that image."
+        )
     )
     data: EventBatchPacketDataItemDataT = Field(
         description="the data for the event; depends on the type"

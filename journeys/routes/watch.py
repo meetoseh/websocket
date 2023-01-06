@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, WebSocket
 from itgs import Itgs
 from journeys.auth import auth_any
+from image_files.auth import create_jwt as create_image_file_jwt
 from pydantic import BaseModel, Field
 from journeys.lib.data import (
     JourneyWatchCoreData,
@@ -25,6 +26,7 @@ from journeys.lib.packets import (
     EventBatchPacket,
     EventBatchPacketData,
     EventBatchPacketDataItem,
+    ImageRef,
     SyncRequestPacket,
     SyncRequestPacketData,
     SyncResponsePacket,
@@ -343,12 +345,15 @@ class JourneyEventPubSubMessage(BaseModel):
     """Describes a message that is published to the pubsub topic for a journey"""
 
     uid: str = Field(description="the uid of the new event")
-    user_sub: str = Field(description="the uid of the user who created the event")
+    user_sub: str = Field(description="the sub of the user who created the event")
     session_uid: str = Field(
         description="the uid of the session the event was created in"
     )
     evtype: str = Field(description="the type of the event")
     data: Dict[str, Any] = Field(description="the data of the event")
+    icon: Optional[str] = Field(
+        description="if there is an icon associated with this event, the uid of the corresponding image file"
+    )
     journey_time: float = Field(description="the journey time of the event")
     created_at: float = Field(
         description="the unix timestamp of when the event was created"
@@ -455,6 +460,14 @@ async def handle_stream(
                                     session_uid=message.session_uid,
                                     evtype=message.evtype,
                                     journey_time=message.journey_time,
+                                    icon=(
+                                        ImageRef(
+                                            uid=message.icon,
+                                            jwt=await create_image_file_jwt(itgs, message.icon)
+                                        )
+                                        if message.icon is not None
+                                        else None
+                                    ),
                                     data=message.data,
                                 )
                             )

@@ -9,86 +9,90 @@ They have the following form:
 
 ```json
 {
+  "uid": "string",
+  "user_sub": "string",
+  "session_uid": "string",
+  "evtype": "string",
+  "journey_time": 0,
+  "icon": {
     "uid": "string",
-    "user_sub": "string",
-    "session_uid": "string",
-    "evtype": "string",
-    "journey_time": 0,
-    "data": {
-        "key": "value"
-    }
+    "jwt": "string"
+  },
+  "data": {
+    "key": "value"
+  }
 }
 ```
 
-where the `user_sub` and `session_uid` may be omitted by the server
+where the `user_sub`, `session_uid`, and `icon` may be omitted by the server
 
 The `data` field on each event depends on the event type. The event types,
 and respective data fields are:
 
--   `join`: A user joined the journey. The data field is as follows:
+- `join`: A user joined the journey. The data field is as follows:
 
-    ```json
-    {}
-    ```
+  ```json
+  { "name": "string" }
+  ```
 
--   `leave`: A user left the journey. The data field is as follows:
+- `leave`: A user left the journey. The data field is as follows:
 
-    ```json
-    {}
-    ```
+  ```json
+  { "name": "string" }
+  ```
 
--   `like`: A user liked the journey. The data field is as follows:
+- `like`: A user liked the journey. The data field is as follows:
 
-    ```json
-    {}
-    ```
+  ```json
+  {}
+  ```
 
--   `numeric_prompt_response`: Used when the journey has a numeric prompt and a
-    user provided a response. The journey prompt type and options can be found
-    from the HTTP api. The data field is as follows:
+- `numeric_prompt_response`: Used when the journey has a numeric prompt and a
+  user provided a response. The journey prompt type and options can be found
+  from the HTTP api. The data field is as follows:
 
-    ```json
-    {
-        "rating": 1
-    }
-    ```
+  ```json
+  {
+    "rating": 1
+  }
+  ```
 
-    where `rating` is the numeric response given by the user
+  where `rating` is the numeric response given by the user
 
--   `press_prompt_start_response`: Used when the journey has a press prompt
-    and a user started pressing the button. The data field is as follows:
+- `press_prompt_start_response`: Used when the journey has a press prompt
+  and a user started pressing the button. The data field is as follows:
 
-    ```json
-    {}
-    ```
+  ```json
+  {}
+  ```
 
--   `press_prompt_end_response`: Used when the journey has a press prompt
-    and a user stopped pressing the button. The data field is as follows:
+- `press_prompt_end_response`: Used when the journey has a press prompt
+  and a user stopped pressing the button. The data field is as follows:
 
-    ```json
-    {}
-    ```
+  ```json
+  {}
+  ```
 
--   `color_prompt_response`: Used when the journey has a color prompt and a
-    user provided a response. The journey prompt type and options can be found
-    from the HTTP api. The data field is as follows:
+- `color_prompt_response`: Used when the journey has a color prompt and a
+  user provided a response. The journey prompt type and options can be found
+  from the HTTP api. The data field is as follows:
 
-    ```json
-    {
-        "index": 0
-    }
-    ```
+  ```json
+  {
+    "index": 0
+  }
+  ```
 
-    where `index` refers to one of the colors in the journey prompt options
+  where `index` refers to one of the colors in the journey prompt options
 
--   `word_prompt_response`: Used when the journey has a word prompt and a user
-    provided a response. The journey prompt type and options can be found from
-    the HTTP api. The data field is as follows:
+- `word_prompt_response`: Used when the journey has a word prompt and a user
+  provided a response. The journey prompt type and options can be found from
+  the HTTP api. The data field is as follows:
 
-    ```json
-    {
-        "index": 0
-    }
-    ```
+  ```json
+  {
+    "index": 0
+  }
+  ```
 
-    where `index` refers to one of the words in the journey prompt options
+  where `index` refers to one of the words in the journey prompt options
