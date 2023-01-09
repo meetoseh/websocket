@@ -18,4 +18,4 @@ async def handle_error(exc: Exception) -> None:
     message = f"```\n{message}\n```"
     async with Itgs() as itgs:
         slack = await itgs.slack()
-        await slack.send_web_error_message(message, "an error occurred in backend")
+        await slack.send_web_error_message(message, "an error occurred in websocket")
