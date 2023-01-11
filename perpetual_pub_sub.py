@@ -549,36 +549,23 @@ class PPSSubscription:
             self._unsafe_close()
             return
 
+        if self.background_thread_shutdown_event.is_set():
+            self._unsafe_close()
+            return
+
         # safe close
         self.exit_event.set()
         async with self.lock:
             self.perpetual_pub_sub.unsubscribe_queue.put((self.uid, self.channel))
             while True:
-                bknd_shutdown = asyncio.create_task(
-                    self.background_thread_shutdown_event.wait()
-                )
                 poll = asyncio.create_task(self.background_thread_poll_event.wait())
                 try:
-                    await asyncio.wait(
-                        [bknd_shutdown, poll],
-                        timeout=5,
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
+                    await asyncio.wait_for(poll, timeout=5)
                 except asyncio.TimeoutError:
                     # probably can't do any networking as we've been shutdown
                     traceback.print_exc()
                     self._unsafe_close()
                     return
-
-                if bknd_shutdown.done():
-                    # background thread has exited before we sent the signal,
-                    # meaning that the receive pipe broke, meaning that the
-                    # perpetual pub sub process has exited.
-                    poll.cancel()
-                    self._unsafe_close()
-                    return
-
-                bknd_shutdown.cancel()
 
                 msg = self.receive_pipe.recv_bytes()
                 if msg == b"closed":
