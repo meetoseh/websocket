@@ -463,7 +463,9 @@ async def handle_stream(
                                     icon=(
                                         ImageRef(
                                             uid=message.icon,
-                                            jwt=await create_image_file_jwt(itgs, message.icon)
+                                            jwt=await create_image_file_jwt(
+                                                itgs, message.icon
+                                            ),
                                         )
                                         if message.icon is not None
                                         else None
