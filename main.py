@@ -8,11 +8,6 @@ import updater
 import asyncio
 import os
 
-if pps.instance is None:
-    pps.instance = pps.PerpetualPubSub()
-
-asyncio.ensure_future(updater.listen_forever())
-asyncio.ensure_future(journeys.lib.meta.purge_journey_meta_loop())
 app = FastAPI(
     title="oseh websockets",
     description="hypersocial mindfulness app",
@@ -33,6 +28,20 @@ if os.environ.get("ENVIRONMENT") == "dev":
 
 app.include_router(journeys.router.router, prefix="/api/2/journeys", tags=["journeys"])
 app.router.redirect_slashes = False
+
+
+if pps.instance is None:
+    pps.instance = pps.PerpetualPubSub()
+
+background_tasks = set()
+
+
+@app.on_event("startup")
+def register_background_tasks():
+    background_tasks.add(asyncio.create_task(updater.listen_forever()))
+    background_tasks.add(
+        asyncio.create_task(journeys.lib.meta.purge_journey_meta_loop())
+    )
 
 
 @app.websocket("/api/2/test/ws")

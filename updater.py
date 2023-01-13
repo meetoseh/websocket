@@ -5,6 +5,7 @@ import asyncio
 import subprocess
 import platform
 import secrets
+from loguru import logger
 import os
 
 
@@ -89,7 +90,9 @@ async def listen_forever():
     recieving a message, calls /home/ec2-user/update_webapp.sh
     """
     if os.path.exists("updater.lock"):
+        logger.warning("updater already running; updater loop exiting")
         return
+
     with open("updater.lock", "w") as f:
         f.write(str(os.getpid()))
 
@@ -97,7 +100,7 @@ async def listen_forever():
         await _listen_forever()
     finally:
         os.unlink("updater.lock")
-        print("updater shutdown")
+        logger.info("updater shutdown")
 
 
 def listen_forever_sync():
