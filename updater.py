@@ -19,7 +19,7 @@ async def _listen_forever():
 
         if os.environ.get("ENVIRONMENT") != "dev":
             slack = await itgs.slack()
-            await slack.send_ops_message(f"backend {socket.gethostname()} ready")
+            await slack.send_ops_message(f"websocket {socket.gethostname()} ready")
 
     async with pps.PPSSubscription(pps.instance, "updates:websocket", "updater") as sub:
         await sub.read()
