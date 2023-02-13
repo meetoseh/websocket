@@ -152,7 +152,7 @@ class PerpetualPubSub:
             exit_event_thread.join()
 
         try:
-            while True:
+            while not self.exit_event.is_set():
                 try:
                     async with Itgs() as itgs:
                         logger.info("Connecting to redis")
