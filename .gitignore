@@ -6,3 +6,4 @@ updater.lock
 
 # md -> html exports
 docs/**/*.html
+/*.pem
