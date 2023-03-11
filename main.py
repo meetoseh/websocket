@@ -2,11 +2,12 @@ from fastapi import FastAPI, WebSocket
 from starlette.middleware.cors import CORSMiddleware
 from error_middleware import handle_request_error
 import perpetual_pub_sub as pps
-import journeys.router
-import journeys.lib.meta
+import interactive_prompts.router
+import interactive_prompts.lib.meta
 import updater
 import asyncio
 import os
+from loguru import logger
 
 app = FastAPI(
     title="oseh websockets",
@@ -26,7 +27,11 @@ if os.environ.get("ENVIRONMENT") == "dev":
         allow_headers=["Authorization"],
     )
 
-app.include_router(journeys.router.router, prefix="/api/2/journeys", tags=["journeys"])
+app.include_router(
+    interactive_prompts.router.router,
+    prefix="/api/2/interactive_prompts",
+    tags=["interactive_prompts"],
+)
 app.router.redirect_slashes = False
 
 
@@ -38,9 +43,14 @@ background_tasks = set()
 
 @app.on_event("startup")
 def register_background_tasks():
+    logger.add("websocket.log", enqueue=True, rotation="100 MB")
+
     background_tasks.add(asyncio.create_task(updater.listen_forever()))
+    background_tasks.add(asyncio.create_task(pps.instance.run_in_background_async()))
     background_tasks.add(
-        asyncio.create_task(journeys.lib.meta.purge_journey_meta_loop())
+        asyncio.create_task(
+            interactive_prompts.lib.meta.purge_interactive_prompt_meta_loop()
+        )
     )
 
 

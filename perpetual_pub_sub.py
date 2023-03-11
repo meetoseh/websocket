@@ -45,10 +45,11 @@ class PPSShutdownException(Exception):
 
 
 class PerpetualPubSub:
-    """Acts as an interface to a perpetual pub sub connection. When initialized,
-    this will start a new process which will handle the perpetual connection.
-    In order to avoid an explosion of processes, care should be taken to ensure
-    this is only initialized within the main process.
+    """Acts as an interface to a perpetual pub sub connection. This is multi-process
+    safe and multi-thread safe, however, ctrl-c events behave extremely strangely
+    in multiprocess contexts. Hence, to have more control over shutdown, it's suggested
+    this simply be run as a background task for asyncio in the core process/thread,
+    until a solution for ctrl-c is found.
     """
 
     def __init__(self):
@@ -85,15 +86,7 @@ class PerpetualPubSub:
         pub sub process.
         """
 
-        mp.Process(target=self._run_in_background, daemon=True).start()
-
-    def _run_in_background(self) -> Never:
-        """This is the function which is run in the background process. It will create
-        an asyncio event loop and call _run_in_background_async.
-        """
-        asyncio.run(self._run_in_background_async())
-
-    async def _run_in_background_async(self) -> Never:
+    async def run_in_background_async(self) -> Never:
         """Runs continuously until a termination signal is received. This maintains
         the connection to redis and listens for new subscriptions and unsubscriptions
         from other processes.
@@ -148,8 +141,12 @@ class PerpetualPubSub:
                             f"could not send closed to {uid} (generic os error)"
                         )
 
+            logger.debug(
+                "PerpetualPubSub sent closed events successfully, joining exit event thread"
+            )
             self.exit_event.set()
             exit_event_thread.join()
+            logger.info("PerpetualPubSub clean shutdown complete")
 
         try:
             while not self.exit_event.is_set():
@@ -406,9 +403,10 @@ class PerpetualPubSub:
                         )
                         sys.exit(1)
 
-                    await asyncio.sleep(len(failures_times))
+                    await asyncio.sleep(2 ** len(failures_times))
         except BaseException:
             # we've been interrupted, notify all the subscribers that we're shutting down
+            logger.debug("PerpetualPubSub detected interrupt")
             shutdown_cleanly()
             raise
         finally:
