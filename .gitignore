@@ -4,6 +4,7 @@ dev.bat
 /start.bat
 /tmp
 updater.lock
+/websocket.log
 
 # md -> html exports
 docs/**/*.html
