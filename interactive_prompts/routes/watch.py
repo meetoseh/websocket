@@ -146,7 +146,7 @@ async def handle_initial_handshake(
                         data=ErrorPacketData[AUTH_REQUEST_RESPONSE_ERROR_TYPES](
                             code=422, type="unprocessable_entity", message=str(e)
                         ),
-                    ).json()
+                    ).model_dump_json()
                 ),
                 timeout=SEND_TIMEOUT,
             )
@@ -180,7 +180,7 @@ async def handle_initial_handshake(
                         data=ErrorPacketData[AUTH_REQUEST_RESPONSE_ERROR_TYPES](
                             code=403, type="forbidden", message="invalid JWT"
                         ),
-                    ).json()
+                    ).model_dump_json()
                 ),
                 timeout=SEND_TIMEOUT,
             )
@@ -213,7 +213,7 @@ async def handle_initial_handshake(
                             type="not_found",
                             message="the interactive prompt does not exist; it may have been deleted",
                         ),
-                    ).json()
+                    ).model_dump_json()
                 ),
                 timeout=SEND_TIMEOUT,
             )
@@ -229,7 +229,7 @@ async def handle_initial_handshake(
         type="sync_request",
         uid=uid,
         data=SyncRequestPacketData(),
-    ).json()
+    ).model_dump_json()
 
     logger.debug(
         "uid={uid} sending SyncRequest at about now={now}",
@@ -276,7 +276,7 @@ async def handle_initial_handshake(
                         data=ErrorPacketData[SYNC_RESPONSE_RESPONSE_ERROR_TYPES](
                             code=422, type="unprocessable_entity", message=str(e)
                         ),
-                    ).json()
+                    ).model_dump_json()
                 ),
                 timeout=SEND_TIMEOUT,
             )
@@ -316,7 +316,7 @@ async def handle_initial_handshake(
                     type="auth_response",
                     uid=uid,
                     data=AuthResponseSuccessPacketData(),
-                ).json()
+                ).model_dump_json()
             ),
             timeout=SEND_TIMEOUT,
         )
@@ -516,7 +516,7 @@ async def handle_stream(
                                 data=EventBatchPacketData(
                                     events=unsent_events,
                                 ),
-                            ).json()
+                            ).model_dump_json()
                         ),
                         timeout=SEND_TIMEOUT,
                     )

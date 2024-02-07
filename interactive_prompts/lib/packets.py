@@ -5,20 +5,19 @@ be sent.
 
 from typing import Generic, List, Literal, Optional, TypeVar, Union
 from pydantic import BaseModel, Field, validator
-from pydantic.generics import GenericModel
 
 PacketTypeT = TypeVar("PacketTypeT", bound=str)
 PacketDataT = TypeVar("PacketDataT", bound=BaseModel)
 
 
-class ClientPacket(GenericModel, Generic[PacketTypeT, PacketDataT]):
+class ClientPacket(BaseModel, Generic[PacketTypeT, PacketDataT]):
     """A packet sent from the client to the server"""
 
     type: PacketTypeT = Field(description="The type of the packet")
     data: PacketDataT = Field(description="The data of the packet")
 
 
-class ServerFailurePacket(GenericModel, Generic[PacketTypeT, PacketDataT]):
+class ServerFailurePacket(BaseModel, Generic[PacketTypeT, PacketDataT]):
     """A packet sent from the server to the client to indicate something failed"""
 
     success: Literal[False] = Field(description="Whether the operation was successful")
@@ -29,7 +28,7 @@ class ServerFailurePacket(GenericModel, Generic[PacketTypeT, PacketDataT]):
     data: PacketDataT = Field(description="The data of the packet")
 
 
-class ServerSuccessPacket(GenericModel, Generic[PacketTypeT, PacketDataT]):
+class ServerSuccessPacket(BaseModel, Generic[PacketTypeT, PacketDataT]):
     """A packet sent from the server to the client to indicate something succeeded"""
 
     success: Literal[True] = Field(description="Whether the operation was successful")
@@ -43,7 +42,7 @@ class ServerSuccessPacket(GenericModel, Generic[PacketTypeT, PacketDataT]):
 ErrorTypeT = TypeVar("ErrorTypeT")
 
 
-class ErrorPacketData(GenericModel, Generic[ErrorTypeT]):
+class ErrorPacketData(BaseModel, Generic[ErrorTypeT]):
     """A packet sent from the server to the client if an error occurs."""
 
     code: int = Field(description="The error code, interpreted like a status code")
@@ -90,8 +89,7 @@ class AuthRequestPacketData(BaseModel):
     )
 
 
-class SyncRequestPacketData(BaseModel):
-    ...
+class SyncRequestPacketData(BaseModel): ...
 
 
 class SyncResponsePacketData(BaseModel):
@@ -125,8 +123,7 @@ class SyncResponsePacketData(BaseModel):
         return transmit_timestamp
 
 
-class AuthResponseSuccessPacketData(BaseModel):
-    ...
+class AuthResponseSuccessPacketData(BaseModel): ...
 
 
 class EventBatchPacketDataItemJoinData(BaseModel):
@@ -137,20 +134,17 @@ class EventBatchPacketDataItemLeaveData(BaseModel):
     name: str = Field(description="The name of the user")
 
 
-class EventBatchPacketDataItemLikeData(BaseModel):
-    ...
+class EventBatchPacketDataItemLikeData(BaseModel): ...
 
 
 class EventBatchPacketDataItemNumericPromptResponseData(BaseModel):
     rating: int = Field(description="the rating given by the user", ge=0)
 
 
-class EventBatchPacketDataItemPressPromptStartResponseData(BaseModel):
-    ...
+class EventBatchPacketDataItemPressPromptStartResponseData(BaseModel): ...
 
 
-class EventBatchPacketDataItemPressPromptEndResponseData(BaseModel):
-    ...
+class EventBatchPacketDataItemPressPromptEndResponseData(BaseModel): ...
 
 
 class EventBatchPacketDataItemColorPromptResponseData(BaseModel):

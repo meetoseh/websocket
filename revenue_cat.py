@@ -1,4 +1,5 @@
 """This module assists with working with entitlements from RevenueCat"""
+
 from typing import Dict, List, Literal, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field

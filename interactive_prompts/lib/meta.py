@@ -1,6 +1,5 @@
 """This module assists with loading and caching the meta data for an interactive prompt."""
 
-
 import time
 from typing import NoReturn, Optional
 from itgs import Itgs
@@ -39,7 +38,7 @@ async def set_cached_interactive_prompt_meta(
     local_cache = await itgs.local_cache()
     local_cache.set(
         f"interactive_prompts:{interactive_prompt_uid}:meta".encode("utf-8"),
-        meta.json().encode("utf-8"),
+        meta.model_dump_json().encode("utf-8"),
         expire=60 * 60 * 24,
     )
 
@@ -110,7 +109,7 @@ async def purge_interactive_prompt_meta(
             interactive_prompt_uid=interactive_prompt_uid,
             min_checked_at=time.time(),
         )
-        .json()
+        .model_dump_json()
         .encode("utf-8"),
     )
 
