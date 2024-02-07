@@ -6,7 +6,7 @@ main() {
     fi
     . venv/bin/activate
     python -m pip install -U pip
-    pip install -r requirements.txt
+    pip install --no-deps -r requirements.txt
     deactivate
     chmod +x scripts/run.sh
 }
