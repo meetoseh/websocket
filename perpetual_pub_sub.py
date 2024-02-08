@@ -11,6 +11,7 @@ This is not suitable for connections which have a lot of traffic - they should
 continue to have a dedicated connection. This is not suitable for short-lived
 subscriptions, which should also use a dedicated connection.
 """
+
 import time
 from typing import (
     AsyncIterator,
@@ -397,10 +398,11 @@ class PerpetualPubSub:
                     failures_times.append(now)
 
                     if len(failures_times) >= 5:
-                        slack = await itgs.slack()
-                        await slack.send_ops_message(
-                            "web-backend PerpetualPubSub _run_in_background_async is failing too often. Exiting."
-                        )
+                        async with Itgs() as itgs:
+                            slack = await itgs.slack()
+                            await slack.send_ops_message(
+                                "websocket PerpetualPubSub _run_in_background_async is failing too often. Exiting."
+                            )
                         sys.exit(1)
 
                     await asyncio.sleep(2 ** len(failures_times))
@@ -418,7 +420,7 @@ def mp_event_to_asyncio_event(
     loop: asyncio.AbstractEventLoop,
     mp_event: multiprocessing.synchronize.Event,
     aio_event: asyncio.Event,
-) -> Never:
+):
     """A thread target for setting an asyncio event when a multiprocessing event is set."""
     mp_event.wait()
     loop.call_soon_threadsafe(aio_event.set)
@@ -467,12 +469,12 @@ class PPSSubscription:
         exit context
         """
 
-        self.receive_pipe: Optional[multiprocessing.connection.Connection] = None
+        self.receive_pipe: Optional[multiprocessing.connection.PipeConnection] = None
         """The pipe to receive messages from the perpetual pub sub process. This is
         set when the context is entered.
         """
 
-        self.send_pipe: Optional[multiprocessing.connection.Connection] = None
+        self.send_pipe: Optional[multiprocessing.connection.PipeConnection] = None
         """The pipe that the perpetual pub sub process uses to send messages to this
         subscription. This is set when the context is entered.
         """
@@ -540,7 +542,11 @@ class PPSSubscription:
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         """Exits the context. This will unsubscribe from the channel."""
-        if self.send_pipe is None:
+        if (
+            self.send_pipe is None
+            or self.receive_pipe is None
+            or self.background_thread is None
+        ):
             raise RuntimeError("Cannot exit context before entering context")
 
         if exc_type is not None:
@@ -584,11 +590,14 @@ class PPSSubscription:
 
     def _unsafe_close(self) -> None:
         self.exit_event.set()
-        self.send_pipe.close()
-        self.receive_pipe.close()
+        if self.send_pipe is not None:
+            self.send_pipe.close()
+        if self.receive_pipe is not None:
+            self.receive_pipe.close()
         self.background_thread_shutdown_event.set()
         self.background_thread_resume_event.set()
-        self.background_thread.join()
+        if self.background_thread is not None:
+            self.background_thread.join()
         self.send_pipe = None
         self.receive_pipe = None
         self.background_thread = None
@@ -617,6 +626,8 @@ class PPSSubscription:
         """
         if self.exit_event.is_set():
             raise PPSShutdownException("Subscription is being removed")
+        if self.receive_pipe is None:
+            raise RuntimeError("Cannot read before entering context")
 
         async with self.lock:
             if self.exit_event.is_set():
