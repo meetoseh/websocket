@@ -1,5 +1,5 @@
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 from fastapi import APIRouter, WebSocket
 from itgs import Itgs
 from interactive_prompts.auth import auth_any
@@ -87,13 +87,13 @@ assert STAY_PAST_CLOSE_TIME > max(
 @router.websocket("/live")
 async def watch_interactive_prompt(websocket: WebSocket):
     """See docs/routes/interactive_prompts/live.md"""
-    logger = loguru.logger.patch(
+    logger = cast(LoguruLogger, loguru.logger.patch(
         lambda record: record.update(
             {
                 "message": f"interactive_prompts.live {id(websocket)=} {record['message']}"
             }
         )
-    )
+    ))
 
     try:
         logger.debug("accept()")
@@ -129,9 +129,8 @@ async def handle_initial_handshake(
         return
 
     try:
-        parsed = AuthRequestPacket.parse_raw(
-            raw["bytes"] if raw.get("bytes") else raw["text"],
-            content_type="application/json",
+        parsed = AuthRequestPacket.model_validate_json(
+            raw["bytes"] if raw.get("bytes") else raw["text"]
         )
     except ValidationError as e:
         uid = gen_uid()
@@ -158,7 +157,7 @@ async def handle_initial_handshake(
 
     auth_result = await auth_any(itgs, authorization=f"bearer {parsed.data.jwt}")
     if (
-        not auth_result.success
+        auth_result.result is None
         or auth_result.result.interactive_prompt_uid
         != parsed.data.interactive_prompt_uid
     ):
@@ -167,7 +166,7 @@ async def handle_initial_handshake(
             "uid={uid} received AuthRequest with invalid JWT: jwt={jwt} (success={success}, requested interactive_prompt_uid={interactive_prompt_uid})",
             uid=repr(uid),
             jwt=repr(parsed.data.jwt),
-            success=repr(auth_result.success),
+            success=repr(auth_result.result is not None),
             interactive_prompt_uid=repr(parsed.data.interactive_prompt_uid),
         )
         try:
@@ -259,9 +258,8 @@ async def handle_initial_handshake(
         return
 
     try:
-        parsed = SyncResponsePacket.parse_raw(
-            raw["bytes"] if raw.get("bytes") else raw["text"],
-            content_type="application/json",
+        parsed = SyncResponsePacket.model_validate_json(
+            raw["bytes"] if raw.get("bytes") else raw["text"]
         )
     except ValidationError as e:
         uid = gen_uid()
@@ -438,8 +436,8 @@ async def handle_stream(
             if event_future.done():
                 raw_message = event_future.result()
                 if raw_message is not None:
-                    message = InteractivePromptEventPubSubMessage.parse_raw(
-                        raw_message["data"], content_type="application/json"
+                    message = InteractivePromptEventPubSubMessage.model_validate_json(
+                        raw_message["data"]
                     )
 
                     cur_prompt_time = data.core.prompt_time
@@ -467,7 +465,7 @@ async def handle_stream(
                                     uid=message.uid,
                                     user_sub=message.user_sub,
                                     session_uid=message.session_uid,
-                                    evtype=message.evtype,
+                                    evtype=cast(Any, message.evtype),
                                     prompt_time=message.prompt_time,
                                     icon=(
                                         ImageRef(
@@ -479,7 +477,7 @@ async def handle_stream(
                                         if message.icon is not None
                                         else None
                                     ),
-                                    data=message.data,
+                                    data=cast(Any, message.data),
                                 )
                             )
 
@@ -568,12 +566,12 @@ async def handle_stream(
                     recieve_future,
                     event_future,
                     *(
-                        [want_send_next_latency_future]
+                        [cast(asyncio.Task, want_send_next_latency_future)]
                         if latency_future is None
                         else [latency_future]
                     ),
                     *(
-                        [want_send_event_batch_future]
+                        [cast(asyncio.Task, want_send_event_batch_future)]
                         if next_event_batch_at is not None
                         else []
                     ),

@@ -1,4 +1,4 @@
-"""Provides utility functions for working with interactive prompt jwts"""
+"""Provides utility functions for working with job progress jwts"""
 
 from typing import Any, Dict, Literal, Optional
 from error_middleware import handle_error
@@ -18,8 +18,8 @@ from models import (
 
 @dataclass
 class SuccessfulAuthResult:
-    interactive_prompt_uid: str
-    """The UID of the interactive prompt which they have access too"""
+    job_progress_uid: str
+    """The UID of the job progress which they have access too"""
 
     claims: Optional[Dict[str, Any]]
     """The claims of the token, typically for debugging, if applicable for the token type"""
@@ -36,12 +36,17 @@ class AuthResult:
     error_response: Optional[Response]
     """if the authorization failed, the suggested error response"""
 
+    @property
+    def success(self) -> bool:
+        """True if it succeeded, False otherwise"""
+        return self.result is not None
+
 
 async def auth_presigned(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
     """Verifies that the authorization header is set and matches a bearer
-    token which provides access to a particular interactive prompt In particular,
-    the JWT should be signed with `OSEH_INTERACTIVE_PROMPT_JWT_SECRET`, have the audience
-    `oseh-interactive-prompt`, and have an iat and exp set and valid.
+    token which provides access to a particular transcript. In particular,
+    the JWT should be signed with `OSEH_PROGRESS_JWT_SECRET`, have the audience
+    `oseh-job-progress`, and have an iat and exp set and valid.
 
     Args:
         itgs (Itgs): The integrations to use to connect to networked services
@@ -65,7 +70,7 @@ async def auth_presigned(itgs: Itgs, authorization: Optional[str]) -> AuthResult
         )
 
     token = authorization[len("bearer ") :]
-    secret = os.environ["OSEH_INTERACTIVE_PROMPT_JWT_SECRET"]
+    secret = os.environ["OSEH_PROGRESS_JWT_SECRET"]
 
     try:
         claims = jwt.decode(
@@ -73,12 +78,12 @@ async def auth_presigned(itgs: Itgs, authorization: Optional[str]) -> AuthResult
             secret,
             algorithms=["HS256"],
             options={"require": ["sub", "iss", "exp", "aud", "iat"]},
-            audience="oseh-interactive-prompt",
+            audience="oseh-job-progress",
             issuer="oseh",
         )
     except Exception as e:
         if not isinstance(e, jwt.exceptions.ExpiredSignatureError):
-            await handle_error(e, extra_info="failed to decode interactive prompt jwt")
+            await handle_error(e, extra_info="failed to decode job progress jwt")
         return AuthResult(
             result=None,
             error_type="invalid",
@@ -86,9 +91,7 @@ async def auth_presigned(itgs: Itgs, authorization: Optional[str]) -> AuthResult
         )
 
     return AuthResult(
-        result=SuccessfulAuthResult(
-            interactive_prompt_uid=claims["sub"], claims=claims
-        ),
+        result=SuccessfulAuthResult(job_progress_uid=claims["sub"], claims=claims),
         error_type=None,
         error_response=None,
     )
@@ -96,7 +99,7 @@ async def auth_presigned(itgs: Itgs, authorization: Optional[str]) -> AuthResult
 
 async def auth_any(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
     """Verifies that the authorization matches one of the accepted authorization
-    patterns for interactive prompts. This should be preferred over `auth_presigned` unless
+    patterns for job progress. This should be preferred over `auth_presigned` unless
     a JWT is required.
 
     Args:
@@ -105,21 +108,19 @@ async def auth_any(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
 
     Returns:
         AuthResult: The result of the authentication, which will include the
-            suggested error response on failure and the authorized interactive prompts
+            suggested error response on failure and the authorized image files
             uid on success
     """
     return await auth_presigned(itgs, authorization)
 
 
-async def create_jwt(
-    itgs: Itgs, interactive_prompt_uid: str, duration: int = 1800
-) -> str:
-    """Produces a JWT for the given interactive prompt uid. The returned JWT will
+async def create_jwt(itgs: Itgs, job_progress_uid: str, duration: int = 1800) -> str:
+    """Produces a JWT for the given job progress uid. The returned JWT will
     be acceptable for `auth_presigned`.
 
     Args:
         itgs (Itgs): The integrations to use to connect to networked services
-        interactive_prompt_uid (str): The uid of the interactive prompt to create a JWT for
+        job_progress_uid (str): The uid of the job progress to create a JWT for
         duration (int, optional): The duration of the JWT in seconds. Defaults to 1800.
 
     Returns:
@@ -129,12 +130,12 @@ async def create_jwt(
 
     return jwt.encode(
         {
-            "sub": interactive_prompt_uid,
+            "sub": job_progress_uid,
             "iss": "oseh",
-            "aud": "oseh-interactive-prompt",
+            "aud": "oseh-job-progress",
             "iat": now - 1,
             "exp": now + duration,
         },
-        os.environ["OSEH_INTERACTIVE_PROMPT_JWT_SECRET"],
+        os.environ["OSEH_PROGRESS_JWT_SECRET"],
         algorithm="HS256",
     )

@@ -1,8 +1,11 @@
 from fastapi import FastAPI, WebSocket
 from starlette.middleware.cors import CORSMiddleware
 from error_middleware import handle_request_error
-import perpetual_pub_sub as pps
+from lifespan import lifespan_handler
+from mp_helper import adapt_threading_event_to_asyncio
+import perpetual_pub_sub
 import interactive_prompts.router
+import jobs_progress.router
 import interactive_prompts.lib.meta
 import updater
 import asyncio
@@ -32,26 +35,39 @@ app.include_router(
     prefix="/api/2/interactive_prompts",
     tags=["interactive_prompts"],
 )
+app.include_router(
+    jobs_progress.router.router,
+    prefix="/api/2/jobs",
+    tags=["jobs"],
+)
 app.router.redirect_slashes = False
 
-
-if pps.instance is None:
-    pps.instance = pps.PerpetualPubSub()
 
 background_tasks = set()
 
 
-@app.on_event("startup")
-def register_background_tasks():
+@lifespan_handler
+async def register_background_tasks():
+    if perpetual_pub_sub.instance is None:
+        perpetual_pub_sub.instance = perpetual_pub_sub.PerpetualPubSub()
+
     logger.add("websocket.log", enqueue=True, rotation="100 MB")
 
     background_tasks.add(asyncio.create_task(updater.listen_forever()))
-    background_tasks.add(asyncio.create_task(pps.instance.run_in_background_async()))
+    background_tasks.add(
+        asyncio.create_task(perpetual_pub_sub.instance.run_in_background_async())
+    )
     background_tasks.add(
         asyncio.create_task(
             interactive_prompts.lib.meta.purge_interactive_prompt_meta_loop()
         )
     )
+    yield
+    perpetual_pub_sub.instance.exit_event.set()
+
+    await adapt_threading_event_to_asyncio(
+        perpetual_pub_sub.instance.exitted_event
+    ).wait()
 
 
 @app.websocket("/api/2/test/ws")

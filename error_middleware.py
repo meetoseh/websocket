@@ -16,7 +16,7 @@ async def handle_request_error(request: Request, exc: Exception) -> Response:
     return PlainTextResponse(content="internal server error", status_code=500)
 
 
-async def handle_error(exc: Exception, *, extra_info: Optional[str] = None) -> None:
+async def handle_error(exc: BaseException, *, extra_info: Optional[str] = None) -> None:
     """Handles a generic error"""
     long_message = "\n".join(
         traceback.format_exception(type(exc), exc, exc.__traceback__)

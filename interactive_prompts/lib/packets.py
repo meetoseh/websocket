@@ -223,7 +223,7 @@ class EventBatchPacketDataItem(BaseModel):
 class EventBatchPacketData(BaseModel):
     events: List[EventBatchPacketDataItem] = Field(
         description="the events in the batch",
-        min_items=1,
+        min_length=1,
     )
 
 

@@ -1,7 +1,7 @@
 """This module assists with loading and caching the meta data for an interactive prompt."""
 
 import time
-from typing import NoReturn, Optional
+from typing import NoReturn, Optional, cast
 from itgs import Itgs
 from pydantic import BaseModel, Field
 import perpetual_pub_sub as pps
@@ -23,12 +23,15 @@ async def get_interactive_prompt_meta_from_cache(
     the given uid, if available, otherwise returns None
     """
     local_cache = await itgs.local_cache()
-    raw = local_cache.get(
-        f"interactive_prompts:{interactive_prompt_uid}:meta".encode("utf-8")
+    raw = cast(
+        Optional[bytes],
+        local_cache.get(
+            f"interactive_prompts:{interactive_prompt_uid}:meta".encode("utf-8")
+        ),
     )
     if raw is None:
         return None
-    return InteractivePromptMeta.parse_raw(raw, content_type="application/json")
+    return InteractivePromptMeta.model_validate_json(raw)
 
 
 async def set_cached_interactive_prompt_meta(
@@ -122,6 +125,8 @@ async def purge_interactive_prompt_meta_loop() -> NoReturn:
     invoked by the admin interactive prompt update endpoint(s) as if via the
     purge_interactive_prompt_meta function
     """
+    assert pps.instance is not None
+
     async with pps.PPSSubscription(
         pps.instance,
         "ps:interactive_prompts:meta:purge",

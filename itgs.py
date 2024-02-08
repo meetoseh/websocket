@@ -1,6 +1,8 @@
 """This module allows for easily accessing common integrations -
 the integration is only loaded upon request.
 """
+
+import json
 from typing import Callable, Coroutine, List, Optional
 import rqdb
 import rqdb.async_connection
@@ -8,6 +10,7 @@ import rqdb.logging
 import redis.asyncio
 import diskcache
 import os
+from error_middleware import handle_warning
 import slack
 import jobs
 import file_service
@@ -100,6 +103,65 @@ class Itgs:
 
             self._closures.append(cleanup)
 
+            bknd_tasks = set()
+
+            async def on_slow_query_async(
+                info: rqdb.logging.QueryInfo,
+                /,
+                *,
+                duration_seconds: float,
+                host: str,
+                response_size_bytes: int,
+                started_at: float,
+                ended_at: float,
+            ):
+                pretty_ops = "\n---\n".join(
+                    f"query: {op}\nargs: {json.dumps(args)}\n"
+                    for op, args in zip(info.operations, info.params)
+                )
+                if not await handle_warning(
+                    "websocket:slow_query",
+                    f"query to {host} took {duration_seconds:.3f}s to return {response_size_bytes} bytes:"
+                    f"\n\n```\n{pretty_ops}\n```",
+                ):
+                    return
+
+                async with Itgs() as itgs:
+                    conn = await itgs.conn()
+                    cursor = conn.cursor("none")
+                    slack = await itgs.slack()
+                    for op, args in zip(info.operations, info.params):
+                        explained = await cursor.explain(op, args, out="str")
+                        await slack.send_web_error_message(
+                            f"Slow query to {host} explain query plan:\n```\nquery: {op}\nargs: {json.dumps(args)}\n{explained}\n```"
+                        )
+
+            def on_slow_query(
+                info: rqdb.logging.QueryInfo,
+                /,
+                *,
+                duration_seconds: float,
+                host: str,
+                response_size_bytes: int,
+                started_at: float,
+                ended_at: float,
+            ):
+                if len(bknd_tasks) > 2:
+                    return
+
+                task = asyncio.create_task(
+                    on_slow_query_async(
+                        info,
+                        duration_seconds=duration_seconds,
+                        host=host,
+                        response_size_bytes=response_size_bytes,
+                        started_at=started_at,
+                        ended_at=ended_at,
+                    )
+                )
+                bknd_tasks.add(task)
+                task.add_done_callback(lambda _: bknd_tasks.remove(task))
+
             def _err_log(msg: str):
                 loguru.logger.exception(msg)
 
@@ -151,6 +213,11 @@ class Itgs:
                     connect_timeout=lvl_warning(),
                     hosts_exhausted=lvl_critical(),
                     non_ok_response=lvl_warning(),
+                    slow_query={
+                        "enabled": True,
+                        "threshold_seconds": 1,
+                        "method": on_slow_query,
+                    },
                     backup_start=lvl_info(),
                     backup_end=lvl_info(),
                 ),
