@@ -1,11 +1,12 @@
 """Handles updating when the repository is updated"""
+
 from itgs import Itgs
 import perpetual_pub_sub as pps
+from error_middleware import handle_error
 import asyncio
 import subprocess
 import platform
 import secrets
-from loguru import logger
 import socket
 import os
 
@@ -14,6 +15,8 @@ async def _listen_forever():
     """Subscribes to the redis channel updates:websocket and upon
     recieving a message, calls /home/ec2-user/update_webapp.sh
     """
+    assert pps.instance is not None
+
     async with Itgs() as itgs:
         await release_update_lock_if_held(itgs)
 
@@ -66,9 +69,7 @@ async def release_update_lock_if_held(itgs: Itgs):
         return
 
     redis = await itgs.redis()
-    await redis.eval(
-        DELETE_IF_MATCH_SCRIPT, 1, b"updates:websocket:lock", our_identifier
-    )
+    await redis.eval(DELETE_IF_MATCH_SCRIPT, 1, b"updates:websocket:lock", our_identifier)  # type: ignore
     local_cache.delete(b"updater-lock-key")
 
 
@@ -80,7 +81,7 @@ def do_update():
             stdin=None,
             stdout=None,
             stderr=None,
-            preexec_fn=os.setpgrp,
+            preexec_fn=os.setpgrp,  # type: ignore
         )
     else:
         subprocess.Popen(
@@ -94,18 +95,22 @@ async def listen_forever():
     """Subscribes to the redis channel updates:websocket and upon
     recieving a message, calls /home/ec2-user/update_webapp.sh
     """
-    if os.path.exists("updater.lock"):
-        logger.warning("updater already running; updater loop exiting")
-        return
+    assert pps.instance is not None
 
+    if os.path.exists("updater.lock"):
+        return
     with open("updater.lock", "w") as f:
         f.write(str(os.getpid()))
 
     try:
         await _listen_forever()
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return
+        await handle_error(e, extra_info="in websocket updater")
     finally:
         os.unlink("updater.lock")
-        logger.info("updater shutdown")
+        print("updater shutdown")
 
 
 def listen_forever_sync():
