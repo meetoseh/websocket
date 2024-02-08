@@ -1,7 +1,7 @@
 from fastapi import FastAPI, WebSocket
 from starlette.middleware.cors import CORSMiddleware
 from error_middleware import handle_request_error
-from lifespan import lifespan_handler
+from lifespan import lifespan_handler, top_level_lifespan_handler
 from mp_helper import adapt_threading_event_to_asyncio
 import perpetual_pub_sub
 import interactive_prompts.router
@@ -19,6 +19,7 @@ app = FastAPI(
     openapi_url="/api/2/openapi.json",
     docs_url="/api/2/docs-http",
     exception_handlers={Exception: handle_request_error},
+    lifespan=top_level_lifespan_handler,
 )
 
 if os.environ.get("ENVIRONMENT") == "dev":
