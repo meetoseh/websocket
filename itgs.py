@@ -3,6 +3,7 @@ the integration is only loaded upon request.
 """
 
 import json
+import random
 from typing import Callable, Coroutine, List, Optional
 import rqdb
 import rqdb.async_connection
@@ -45,9 +46,6 @@ class Itgs:
 
         self._conn: Optional[rqdb.async_connection.AsyncConnection] = None
         """the rqlite connection, if it has been opened"""
-
-        self._sentinel: Optional[redis.asyncio.Sentinel] = None
-        """the redis sentinel connection, if it has been opened"""
 
         self._redis_main: Optional[redis.asyncio.Redis] = None
         """the redis main connection, if it has been detected via the sentinel"""
@@ -228,36 +226,78 @@ class Itgs:
         return self._conn
 
     async def redis(self) -> redis.asyncio.Redis:
-        """returns or creates and returns the main redis connection"""
+        """returns or cerates and returns the main redis connection"""
         if self._redis_main is not None:
             return self._redis_main
 
         async with self._lock:
             if self._redis_main is not None:
                 return self._redis_main
+
             redis_ips = os.environ["REDIS_IPS"].split(",")
             if not redis_ips:
                 raise ValueError(
                     "REDIS_IPs is not set and so a redis connection cannot be established"
                 )
 
+            random.shuffle(redis_ips)
+
             async def cleanup(me: "Itgs") -> None:
                 if me._redis_main is not None:
-                    await me._redis_main.aclose()
+                    await me._redis_main.close()
                     me._redis_main = None
 
-                if me._sentinel is not None:
-                    for sentinel in me._sentinel.sentinels:
-                        await sentinel.aclose()
-                    me._sentinel = None
-
             self._closures.append(cleanup)
-            self._sentinel = redis.asyncio.Sentinel(
-                sentinels=[(ip, 26379) for ip in redis_ips],
-                min_other_sentinels=len(redis_ips) // 2,
-            )
-            self._redis_main = self._sentinel.master_for("mymaster")
-        return self._redis_main
+            for idx, ip in enumerate(redis_ips):
+                sentinel_conn = redis.asyncio.Redis(
+                    host=ip,
+                    port=26379,
+                    socket_connect_timeout=3,
+                    single_connection_client=True,
+                )
+                try:
+                    response = await sentinel_conn.execute_command(
+                        "SENTINEL", "MASTER", "mymaster"
+                    )
+                    assert isinstance(response, (list, tuple)), response
+                    assert len(response) % 2 == 0, response
+
+                    master_ip: Optional[str] = None
+                    master_port: Optional[int] = None
+                    num_other_sentinels: Optional[int] = None
+                    for entry_idx in range(0, len(response), 2):
+                        entry = (response[entry_idx], response[entry_idx + 1])
+                        assert isinstance(entry[0], bytes), response
+
+                        key = entry[0]
+                        if key == b"ip":
+                            assert isinstance(entry[1], bytes), response
+                            master_ip = entry[1].decode("utf-8")
+                        elif key == b"port":
+                            assert isinstance(entry[1], bytes), response
+                            master_port = int(entry[1])
+                        elif key == b"num-other-sentinels":
+                            assert isinstance(entry[1], bytes), response
+                            num_other_sentinels = int(entry[1])
+
+                    if (
+                        master_ip is None
+                        or master_port is None
+                        or num_other_sentinels is None
+                    ):
+                        raise ValueError(f"Could not parse {response=}")
+
+                    self._redis_main = redis.asyncio.Redis(
+                        host=master_ip, port=master_port
+                    )
+                    return self._redis_main
+                except:
+                    if idx == len(redis_ips) - 1:
+                        raise
+                finally:
+                    await sentinel_conn.close()
+
+            raise ValueError("Could not find a master redis")
 
     async def slack(self) -> slack.Slack:
         """gets or creates and gets the slack connection"""
