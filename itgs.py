@@ -226,7 +226,7 @@ class Itgs:
         return self._conn
 
     async def redis(self) -> redis.asyncio.Redis:
-        """returns or cerates and returns the main redis connection"""
+        """returns or creates and returns the main redis connection"""
         if self._redis_main is not None:
             return self._redis_main
 
@@ -286,6 +286,10 @@ class Itgs:
                         or num_other_sentinels is None
                     ):
                         raise ValueError(f"Could not parse {response=}")
+
+                    assert num_other_sentinels >= (
+                        len(redis_ips) // 2
+                    ), f"{num_other_sentinels=}, {len(redis_ips)=}"
 
                     self._redis_main = redis.asyncio.Redis(
                         host=master_ip, port=master_port
