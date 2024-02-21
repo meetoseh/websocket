@@ -2,10 +2,10 @@ from typing import List, Optional
 import redis.asyncio
 import redis.asyncio.client
 from pydantic import TypeAdapter
-from jobs_progress.lib.packets import JobProgressModel
+from jobs_progress.lib.packets import JobProgressIncomingModel
 
 
-events_adapter = TypeAdapter(List[JobProgressModel])
+events_adapter = TypeAdapter(List[JobProgressIncomingModel])
 
 
 class EventSubscription:
@@ -45,7 +45,7 @@ class EventSubscription:
 
         await pubsub.aclose()
 
-    async def next(self, *, timeout: int) -> List[JobProgressModel]:
+    async def next(self, *, timeout: int) -> List[JobProgressIncomingModel]:
         pubsub = self.pubsub
         assert pubsub is not None, "not entered"
         assert not self.reading, "non-reentrant next"

@@ -7,11 +7,12 @@ import loguru
 from loguru._logger import Logger as LoguruLogger
 import asyncio
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 import traceback
 from error_middleware import handle_error
 from itgs import Itgs
 from jobs_progress.auth import auth_any
+from jobs_progress.lib.convert_to_outgoing import convert_to_outgoing
 from jobs_progress.lib.data import (
     JobsProgressInitialEventsData,
     JobsProgressWatchCoreData,
@@ -28,13 +29,15 @@ from jobs_progress.lib.packets import (
     EventBatchPacket,
     EventBatchPacketData,
     GenericServerErrorTypes,
-    JobProgressModel,
+    JobProgressIncomingModel,
+    JobProgressOutgoingModel,
     ServerGenericErrorPacket,
 )
 from jobs_progress.lib.subscribe_events import EventSubscription
 
 
 router = APIRouter()
+event_adapter = TypeAdapter(JobProgressIncomingModel)
 
 
 CONNECT_TIMEOUT: float = 20.0
@@ -231,7 +234,8 @@ async def handle_initial_handshake(
 
     try:
         initial_events = [
-            JobProgressModel.model_validate_json(event) for event in raw_events
+            await convert_to_outgoing(itgs, event_adapter.validate_json(event))
+            for event in raw_events
         ]
     except ValidationError as e:
         logger.warning(
@@ -318,7 +322,7 @@ async def handle_stream(
     websocket_recieve_future = asyncio.create_task(websocket.receive())
     websocket_send_future: Optional[asyncio.Task[None]] = None
 
-    unsent_events: List[JobProgressModel] = (
+    unsent_events: List[JobProgressOutgoingModel] = (
         [] if data.initial_events.events is None else data.initial_events.events
     )
     """events that are queued to be sent in the next batch"""
@@ -409,8 +413,9 @@ async def handle_stream(
                         "received {num_events} new events from redis",
                         num_events=repr(len(new_events)),
                     )
+                    for e in new_events:
+                        unsent_events.append(await convert_to_outgoing(itgs, e))
                     data.timeout.last_event_at = loop_at
-                    unsent_events.extend(new_events)
                     if next_event_batch_at is None:
                         next_event_batch_at = loop_at + EVENT_BATCH_INTERVAL
                         logger.debug(

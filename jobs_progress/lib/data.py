@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Optional
 
-from jobs_progress.lib.packets import JobProgressModel
+from jobs_progress.lib.packets import JobProgressOutgoingModel
 
 
 @dataclass
@@ -25,7 +25,7 @@ class JobsProgressWatchTimeoutData:
 
 @dataclass
 class JobsProgressInitialEventsData:
-    events: Optional[List[JobProgressModel]]
+    events: Optional[List[JobProgressOutgoingModel]]
     """The initial events to send to the client, or None if we have already
     sent them
     """

@@ -120,11 +120,16 @@ where
   - `started`: pushed when the jobs runner picks up the job
   - `bounce`: pushed when the jobs runner is going to bounce the job back to the queue,
     usually due to receiving a term signal
+  - `spawned`: pushed when the jobs runner created a new, independent job uid that is related
   - `progress`: most common event; used to update the message/indicator because we made progress
   - `failed`: terminal event, indicates the job failed
   - `succeeded`: terminal event, indicates the job succeeded
 - `message (string)`: freeform text, usually less than 255 characters, meant to be shown
   to the user
+- `spawned (object, null)`: specified iff type is `spawned`, information about the spawned job
+  - `uid (string)`: the uid of the spawned job; this is a job progress uid
+  - `jwt (string)`: a jwt that can be used to access the spawned job's progress
+  - `name (string)`: a hint for the name of this job for the client
 - `indicator (object, null)`: hint for how this step can be visually communicated. `null`
   means no indicator, just the message. Each form the object can take has a
   distinct `type (string, enum)`:

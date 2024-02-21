@@ -10,7 +10,7 @@ from interactive_prompts.lib.packets import (
     AuthRequestResponseErrorPacket as AuthResponseErrorPacket,
     AUTH_REQUEST_RESPONSE_ERROR_TYPES as AUTH_RESPONSE_ERROR_TYPES,
 )
-from jobs import JobProgressType
+from jobs import JobProgressType, JobProgressTypeSimple
 
 
 class AuthRequestPacketData(BaseModel):
@@ -51,8 +51,8 @@ JobProgressIndicatorModel = Union[
 ]
 
 
-class JobProgressModel(BaseModel):
-    type: JobProgressType = Field(description="the type of progress message")
+class JobProgressSimpleModel(BaseModel):
+    type: JobProgressTypeSimple = Field(description="the type of progress message")
     message: str = Field(description="the message to display to the user")
     indicator: Optional[JobProgressIndicatorModel] = Field(
         description=(
@@ -69,8 +69,83 @@ class JobProgressModel(BaseModel):
     )
 
 
+class JobProgressSpawnedInfoIncomingModel(BaseModel):
+    uid: str = Field(
+        description="the uid of the spawned job; this is a job progress uid"
+    )
+    name: str = Field(
+        description="a hint for the name of this job for the client, e.g., 'extract thumbnail'"
+    )
+
+
+class JobProgressSpawnedIncomingModel(BaseModel):
+    type: Literal["spawned"] = Field(description="the type of progress message")
+    message: str = Field(description="the message to display to the user")
+    indicator: Optional[JobProgressIndicatorModel] = Field(
+        description=(
+            "a hint about how to display the progress "
+            "or null if no indicator should be displayed"
+        )
+    )
+    spawned: JobProgressSpawnedInfoIncomingModel = Field(
+        description="information about the spawned job"
+    )
+    occurred_at: float = Field(
+        description=(
+            "the time when the progress message was created in seconds since the epoch. "
+            "events are provided in the order they occurred, but due to clock "
+            "drift, this may not result in non-decreasing occurred_at values"
+        )
+    )
+
+
+JobProgressIncomingModel = Union[
+    JobProgressSimpleModel, JobProgressSpawnedIncomingModel
+]
+
+
+class JobProgressSpawnedInfoOutgoingModel(BaseModel):
+    uid: str = Field(
+        description="the uid of the spawned job; this is a job progress uid"
+    )
+    jwt: str = Field(
+        description="a JWT that can be used to connect to the progress of this job"
+    )
+    name: str = Field(
+        description="a hint for the name of this job for the client, e.g., 'extract thumbnail'"
+    )
+
+
+class JobProgressSpawnedOutgoingModel(BaseModel):
+    type: Literal["spawned"] = Field(description="the type of progress message")
+    message: str = Field(description="the message to display to the user")
+    indicator: Optional[JobProgressIndicatorModel] = Field(
+        description=(
+            "a hint about how to display the progress "
+            "or null if no indicator should be displayed"
+        )
+    )
+    spawned: JobProgressSpawnedInfoOutgoingModel = Field(
+        description="information about the spawned job"
+    )
+    occurred_at: float = Field(
+        description=(
+            "the time when the progress message was created in seconds since the epoch. "
+            "events are provided in the order they occurred, but due to clock "
+            "drift, this may not result in non-decreasing occurred_at values"
+        )
+    )
+
+
+JobProgressOutgoingModel = Union[
+    JobProgressSimpleModel, JobProgressSpawnedOutgoingModel
+]
+
+
 class EventBatchPacketData(BaseModel):
-    events: List[JobProgressModel] = Field(description="the events in the batch")
+    events: List[JobProgressOutgoingModel] = Field(
+        description="the events in the batch"
+    )
 
 
 EventBatchPacket = ServerSuccessPacket[Literal["event_batch"], EventBatchPacketData]
