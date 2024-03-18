@@ -37,7 +37,9 @@ from jobs_progress.lib.subscribe_events import EventSubscription
 
 
 router = APIRouter()
-event_adapter = TypeAdapter(JobProgressIncomingModel)
+event_adapter: TypeAdapter[JobProgressIncomingModel] = TypeAdapter(
+    JobProgressIncomingModel
+)
 
 
 CONNECT_TIMEOUT: float = 20.0
