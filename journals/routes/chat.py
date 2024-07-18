@@ -415,7 +415,9 @@ async def handle_stream(
 
             encrypted_size = int.from_bytes(reader.read(8), "big")
             encrypted_blob = reader.read(encrypted_size)
-            decrypted_blob = key.decrypt(encrypted_blob, ttl=120)
+            decrypted_blob = key.decrypt(
+                encrypted_blob, ttl=None if is_from_sync else 120
+            )
             parsed_blob = journal_chat_redis_packet_adapter.validate_json(
                 decrypted_blob
             )
