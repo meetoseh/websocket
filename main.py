@@ -6,6 +6,7 @@ from mp_helper import adapt_threading_event_to_asyncio
 import perpetual_pub_sub
 import interactive_prompts.router
 import jobs_progress.router
+import journals.router
 import interactive_prompts.lib.meta
 import updater
 import asyncio
@@ -40,6 +41,11 @@ app.include_router(
     jobs_progress.router.router,
     prefix="/api/2/jobs",
     tags=["jobs"],
+)
+app.include_router(
+    journals.router.router,
+    prefix="/api/2/journals",
+    tags=["journals"],
 )
 app.router.redirect_slashes = False
 

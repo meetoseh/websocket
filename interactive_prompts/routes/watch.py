@@ -33,7 +33,10 @@ from interactive_prompts.lib.packets import (
     SyncResponseResponseErrorPacket,
 )
 import secrets
-from starlette.websockets import WebSocketState
+from lib.ws.close import close as _close
+from functools import partial
+
+from lib.ws.gen_packet_uid import gen_packet_uid
 
 
 router = APIRouter()
@@ -59,6 +62,7 @@ CLOSE_TIMEOUT: float = 5.0
 """When we are trying to cleanly shutdown the websocket, how long we wait before
 we give up
 """
+close = partial(_close, timeout=CLOSE_TIMEOUT)
 
 LATENCY_DETECTION_INTERVAL: float = 2.0
 """Seconds between latency detection packets"""
@@ -87,13 +91,16 @@ assert STAY_PAST_CLOSE_TIME > max(
 @router.websocket("/live")
 async def watch_interactive_prompt(websocket: WebSocket):
     """See docs/routes/interactive_prompts/live.md"""
-    logger = cast(LoguruLogger, loguru.logger.patch(
-        lambda record: record.update(
-            {
-                "message": f"interactive_prompts.live {id(websocket)=} {record['message']}"
-            }
-        )
-    ))
+    logger = cast(
+        LoguruLogger,
+        loguru.logger.patch(
+            lambda record: record.update(
+                {
+                    "message": f"interactive_prompts.live {id(websocket)=} {record['message']}"
+                }
+            )
+        ),
+    )
 
     try:
         logger.debug("accept()")
@@ -133,7 +140,7 @@ async def handle_initial_handshake(
             raw["bytes"] if raw.get("bytes") else raw["text"]
         )
     except ValidationError as e:
-        uid = gen_uid()
+        uid = gen_packet_uid()
         logger.exception("uid={uid} received unparseable AuthRequest", uid=repr(uid))
         try:
             await asyncio.wait_for(
@@ -161,7 +168,7 @@ async def handle_initial_handshake(
         or auth_result.result.interactive_prompt_uid
         != parsed.data.interactive_prompt_uid
     ):
-        uid = gen_uid()
+        uid = gen_packet_uid()
         logger.debug(
             "uid={uid} received AuthRequest with invalid JWT: jwt={jwt} (success={success}, requested interactive_prompt_uid={interactive_prompt_uid})",
             uid=repr(uid),
@@ -194,7 +201,7 @@ async def handle_initial_handshake(
     lookahead = parsed.data.lookahead
     meta = await get_interactive_prompt_meta(itgs, parsed.data.interactive_prompt_uid)
     if meta is None:
-        uid = gen_uid()
+        uid = gen_packet_uid()
         logger.warning(
             "uid={uid} received AuthRequest with valid JWT, but interactive_prompt_uid={interactive_prompt_uid} does not exist",
             uid=repr(uid),
@@ -222,7 +229,7 @@ async def handle_initial_handshake(
         await close(websocket, logger=logger)
         return
 
-    uid = gen_uid()
+    uid = gen_packet_uid()
     response = SyncRequestPacket(
         success=True,
         type="sync_request",
@@ -262,7 +269,7 @@ async def handle_initial_handshake(
             raw["bytes"] if raw.get("bytes") else raw["text"]
         )
     except ValidationError as e:
-        uid = gen_uid()
+        uid = gen_packet_uid()
         logger.exception("uid={uid} received unparseable SyncResponse", uid=repr(uid))
         try:
             await asyncio.wait_for(
@@ -304,7 +311,7 @@ async def handle_initial_handshake(
         round_trip_delay=repr(round_trip_delay),
     )
 
-    uid = gen_uid()
+    uid = gen_packet_uid()
     try:
         logger.debug("uid={uid} sending AuthResponseSuccess")
         await asyncio.wait_for(
@@ -496,7 +503,7 @@ async def handle_stream(
 
             now = time.perf_counter()
             if next_event_batch_at is not None and now >= next_event_batch_at:
-                uid = gen_uid()
+                uid = gen_packet_uid()
                 logger.debug(
                     "uid={uid}: sending {n} events to client at now={now}; undesired_delay={undesired_delay}",
                     uid=repr(uid),
@@ -510,7 +517,7 @@ async def handle_stream(
                             EventBatchPacket(
                                 success=True,
                                 type="event_batch",
-                                uid=gen_uid(),
+                                uid=gen_packet_uid(),
                                 data=EventBatchPacketData(
                                     events=unsent_events,
                                 ),
@@ -595,7 +602,7 @@ async def send_latency_detection_packet(
 
     Raises a asyncio.TimeoutError if the send times out.
     """
-    uid = gen_uid()
+    uid = gen_packet_uid()
 
     # we want as minimum time between calculating the prompt time and
     # sending the packet as possible, so we skip the jsonification step
@@ -609,22 +616,3 @@ async def send_latency_detection_packet(
         timeout=SEND_TIMEOUT,
     )
     logger.debug("latency detection packet sent successfully")
-
-
-async def close(websocket: WebSocket, *, logger: LoguruLogger):
-    """Attempts to cleanly close the given websocket"""
-    try:
-        logger.debug("close()")
-        if websocket.state == WebSocketState.DISCONNECTED:
-            logger.debug("already closed")
-            return
-
-        await asyncio.wait_for(websocket.close(), timeout=CLOSE_TIMEOUT)
-        logger.debug("closed cleanly")
-    except asyncio.TimeoutError:
-        logger.debug("close() timed out")
-
-
-def gen_uid() -> str:
-    """Generates a unique packet uid"""
-    return f"oseh_packet_{secrets.token_urlsafe(16)}"
