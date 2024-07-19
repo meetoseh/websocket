@@ -337,6 +337,7 @@ async def handle_stream(
             pubsub.get_message(ignore_subscribe_messages=True, timeout=5)
         )
 
+        lranged_up_to_exclusive = 0
         sent_up_to_exclusive = 0
         sync_done = False
         redis_lrange_future: Optional[asyncio.Future] = None
@@ -455,8 +456,9 @@ async def handle_stream(
                     return False
                 return True
 
-            logger.warning(
-                "ignoring out of order event; from sync? {from_sync}, counter: {counter}, expected: {expected}",
+            logger.log(
+                "WARNING" if is_from_sync else "DEBUG",
+                "ignoring out of order event; from sync? {from_sync}, counter: {counter}, expected: {expected} - resuming sync",
                 from_sync=repr(is_from_sync),
                 counter=repr(parsed_blob.counter),
                 expected=repr(sent_up_to_exclusive),
@@ -481,17 +483,25 @@ async def handle_stream(
                 await close(websocket, logger=logger)
                 break
 
-            if not sync_done and redis_lrange_future is None:
+            if (
+                not sync_done
+                and redis_lrange_future is None
+                and len(to_send_events_queue) < REDIS_EVENT_BATCH_SIZE * 3
+            ):
+                logger.debug(
+                    f"requesting next range from redis ({lranged_up_to_exclusive} to {lranged_up_to_exclusive + REDIS_EVENT_BATCH_SIZE - 1}, inclusive)"
+                )
                 redis_lrange_future = asyncio.create_task(
                     cast(
                         Awaitable[list],
                         redis.lrange(
                             f"journal_chats:{data.journal_chat_uid}:events".encode("utf-8"),  # type: ignore
-                            sent_up_to_exclusive,
-                            sent_up_to_exclusive + REDIS_EVENT_BATCH_SIZE - 1,
+                            lranged_up_to_exclusive,
+                            lranged_up_to_exclusive + REDIS_EVENT_BATCH_SIZE - 1,
                         ),
                     )
                 )
+                lranged_up_to_exclusive += REDIS_EVENT_BATCH_SIZE
                 continue
 
             if redis_lrange_future is not None and redis_lrange_future.done():
@@ -502,11 +512,15 @@ async def handle_stream(
                     await close(websocket, logger=logger)
                     break
 
+                logger.debug(f"received {len(res)} events from redis lrange")
                 redis_lrange_future = None
                 for item in res:
                     events_queue.append((True, item))
 
-                if len(res) < REDIS_EVENT_BATCH_SIZE:
+                if not res:
+                    logger.debug(
+                        "we didnt receive anything from redis on that sync, so stopping polling"
+                    )
                     sync_done = True
                 continue
 
@@ -519,6 +533,7 @@ async def handle_stream(
                     break
 
                 if raw is not None:
+                    logger.debug("received event from pubsub")
                     events_queue.append((False, raw["data"]))
 
                 pubsub_event_future = asyncio.create_task(
@@ -549,7 +564,11 @@ async def handle_stream(
 
                 continue
 
-            if to_send_events_queue and send_future is None:
+            if (
+                to_send_events_queue
+                and send_future is None
+                and (len(events_queue) < 5 or len(to_send_events_queue) > 10)
+            ):
                 sending = to_send_events_queue[:10]
                 to_send_events_queue = to_send_events_queue[10:]
 
