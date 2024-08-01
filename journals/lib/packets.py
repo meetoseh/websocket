@@ -117,8 +117,7 @@ class SegmentDataMutation(BaseModel):
 class SegmentData(BaseModel):
     mutations: List[SegmentDataMutation] = Field(
         description="The mutations to apply to the chat data. After applying all "
-        "these mutations, all integrity checks should pass",
-        min_length=1,
+        "these mutations, all integrity checks should pass"
     )
 
 
