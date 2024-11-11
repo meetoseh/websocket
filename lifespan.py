@@ -23,6 +23,7 @@ async def handle_lifespan():
     ...  # teardown code
 ```
 """
+
 from fastapi import FastAPI
 from typing import Callable, AsyncGenerator, List
 from contextlib import asynccontextmanager
